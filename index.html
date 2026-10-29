@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#FFF0F5">
+<link rel="manifest" href="manifest.json">
 <title>Bunny Quotes</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -450,5 +451,6 @@ function start(){if(!keys.giphy){show("setup");return}show("today");loadToday()}
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{if(!$("v-today").hidden&&today)renderToday()});
 start();
 </script>
+<script>if("serviceWorker"in navigator&&location.protocol==="https:")navigator.serviceWorker.register("sw.js")</script>
 </body>
 </html>
