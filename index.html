@@ -49,6 +49,8 @@ textarea{min-height:70px;resize:vertical;font-size:1.1rem}
 .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-text)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .searchrow{display:flex;gap:8px}.searchrow input{flex:1}
+.findbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:4;background:var(--bg);margin:0 -16px;padding:6px 16px 8px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:4;background:var(--bg)}
 .grid{columns:2;column-gap:10px;margin-top:12px}
 @media (min-width:640px){.grid{columns:3}}
 .grid button{display:block;width:100%;margin:0 0 10px;padding:0;border:0;border-radius:16px;overflow:hidden;cursor:pointer;break-inside:avoid;min-height:120px}
@@ -105,6 +107,7 @@ nav .inner{max-width:520px;margin:0 auto;display:flex;gap:6px}
   <section id="v-find" hidden>
     <h1>Find bunnies</h1>
     <p class="sub">Tap one to put your quote on it</p>
+    <div class="findbar" id="findbar">
     <div class="searchrow">
       <input type="search" id="q" placeholder="Try: good morning, miss you, birthday" enterkeyhint="search" aria-label="Search bunnies">
       <button class="btn primary" id="go" aria-label="Search">Search</button>
@@ -116,6 +119,7 @@ nav .inner{max-width:520px;margin:0 auto;display:flex;gap:6px}
       <button data-kind="gifs" aria-pressed="true">GIFs</button>
       <button data-kind="stickers" aria-pressed="false">Stickers</button>
       <button data-kind="photos" aria-pressed="false">Photos</button>
+    </div>
     </div>
     <div class="grid" id="grid"></div>
     <div id="sentinel" style="height:1px"></div>
