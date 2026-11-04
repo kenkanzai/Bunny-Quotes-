@@ -27,9 +27,19 @@ h1{font-family:"Gaegu","Comic Sans MS",cursive;font-size:2.3rem;line-height:1;ma
 .row{display:flex;gap:10px;margin-top:14px}.row .btn{flex:1}
 .card{background:var(--card);border:3px solid var(--text);border-radius:28px;padding:10px;box-shadow:0 3px 0 var(--text)}
 .preview{position:relative;border-radius:20px;overflow:hidden;background:#fff;min-height:240px;display:grid;place-items:center}
-.preview img{width:100%;display:block}
-.overlay{position:absolute;left:5%;right:5%;text-align:center;line-height:1.05;text-wrap:balance;pointer-events:none;paint-order:stroke fill}
-.overlay.top{top:4%}.overlay.middle{top:50%;transform:translateY(-50%)}.overlay.bottom{bottom:4%}
+.stage{position:relative;width:100%}
+.frame{position:relative;overflow:hidden;background:#fff}
+.frame img{position:absolute;max-width:none;display:block;user-select:none;-webkit-user-drag:none}
+.ink{position:absolute;left:0;top:0;width:100%;pointer-events:none}
+input[type=range]{width:100%;accent-color:var(--accent);height:32px}
+.hint{color:var(--muted);font-weight:700;font-size:.9rem;margin:6px 4px 0}
+.check{display:flex;align-items:center;gap:8px;font-weight:800;margin:10px 4px 0}
+.check input{width:20px;height:20px;accent-color:var(--accent)}
+.qres{display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow:auto;margin-top:10px;padding:2px}
+.qitem{text-align:left;border:2px solid var(--line);background:var(--surface);color:var(--text);border-radius:18px;padding:10px 12px;font:inherit;cursor:pointer}
+.qitem:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.qitem p{margin:0;white-space:pre-line;font-weight:700;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
+.qitem small{display:block;color:var(--muted);font-weight:800;margin-top:4px}
 .loading{color:var(--muted);font-weight:700;padding:30px;text-align:center}
 .shimmer{background:linear-gradient(100deg,var(--soft) 30%,var(--surface) 50%,var(--soft) 70%);background-size:300% 100%;animation:sh 1.3s linear infinite}
 @keyframes sh{to{background-position:-150% 0}}
@@ -69,6 +79,21 @@ nav .inner{max-width:520px;margin:0 auto;display:flex;gap:6px}
 .toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);max-width:90vw;text-align:center;background:var(--text);color:var(--bg);padding:10px 18px;border-radius:999px;font-weight:800;opacity:0;pointer-events:none;transition:.25s;z-index:9}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 .back{background:none;border:0;color:var(--text);font:inherit;font-weight:900;cursor:pointer;padding:6px 4px;margin-bottom:6px;font-size:1rem}
+.tab{position:relative}
+.badge{position:absolute;top:2px;left:calc(50% + 8px);min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--accent);color:var(--accent-text);font-style:normal;font-size:.75rem;line-height:20px;text-align:center;border:2px solid var(--bg)}
+.btn.us{background:var(--soft)}
+.moods{display:grid;gap:10px}
+.mood{display:flex;gap:12px;align-items:center;background:var(--surface);border:3px solid var(--text);border-radius:22px;padding:8px;box-shadow:0 3px 0 var(--text)}
+.mood img{width:84px;height:84px;object-fit:cover;border-radius:16px;flex:none;background:var(--soft)}
+.mood b{display:block;font-size:1.1rem}.mood small{color:var(--muted);font-weight:700}
+.feed{display:flex;flex-direction:column;gap:12px;margin-top:6px}
+.msg{max-width:82%;align-self:flex-start;background:var(--surface);border:2px solid var(--line);border-radius:22px;padding:8px}
+.msg.mine{align-self:flex-end;background:var(--soft)}
+.msg img{width:100%;display:block;border-radius:16px}
+.msg .meta{font-weight:800;font-size:.85rem;color:var(--muted);margin:2px 6px 6px}
+.msg .heart{font-size:2.6rem;text-align:center;line-height:1.1}
+.msg .heart span{display:block;font-size:1rem;font-weight:800;color:var(--text)}
+.msg .save{margin-top:6px;width:100%;padding:8px}
 [hidden]{display:none!important}
 @media (prefers-reduced-motion:reduce){.shimmer{animation:none}}
 </style>
@@ -99,6 +124,7 @@ nav .inner{max-width:520px;margin:0 auto;display:flex;gap:6px}
       <button class="btn" id="todayEdit">Edit</button>
       <button class="btn primary" id="todaySend">Send</button>
     </div>
+    <div class="row" id="todayUsRow" hidden><button class="btn us" id="todayUs">💌 Send to Us</button></div>
     <div class="progress" id="todayProg" hidden><div></div></div>
     <p class="note" id="todayNote"></p>
   </section>
@@ -131,17 +157,41 @@ nav .inner{max-width:520px;margin:0 auto;display:flex;gap:6px}
   <!-- Editor -->
   <section id="v-edit" hidden>
     <button class="back" id="editBack">‹ Back</button>
-    <div class="card"><div class="preview" id="editPrev"><img id="editImg" alt="Selected bunny"><div class="overlay" id="overlay"></div></div></div>
+    <div class="card"><div class="preview" id="editPrev"></div></div>
+
+    <span class="label">Bunny size</span>
+    <div class="searchrow" style="align-items:center">
+      <input type="range" id="zoom" min="1" max="3" step="0.05" value="1" aria-label="Zoom the bunny">
+      <button class="btn" id="zoomReset" style="padding:8px 14px">Reset</button>
+    </div>
+    <p class="hint" id="zoomHint">Slide to zoom in. Then drag the bunny to move it.</p>
 
     <span class="label">Quote</span>
     <div class="pills" id="cats"></div>
-    <textarea id="quoteText" maxlength="120" aria-label="Quote text"></textarea>
+    <textarea id="quoteText" maxlength="500" aria-label="Quote text"></textarea>
     <div class="row" style="margin-top:8px"><button class="btn" id="newQuote">Another quote</button></div>
+
+    <label class="label" for="qq">Search quotes and poems</label>
+    <div class="searchrow">
+      <input type="search" id="qq" placeholder="Try: love, moon, hope, Shakespeare" enterkeyhint="search">
+      <button class="btn primary" id="qgo">Search</button>
+    </div>
+    <label class="check"><input type="checkbox" id="qauthor" checked> Add the author's name</label>
+    <div class="seg" id="qkinds" style="margin-top:10px" hidden>
+      <button data-qk="all" aria-pressed="true">All</button><button data-qk="quote" aria-pressed="false">Quotes</button><button data-qk="poem" aria-pressed="false">Poems</button>
+    </div>
+    <p class="note" id="qnote"></p>
+    <div class="qres" id="qres"></div>
+    <div class="row" style="margin-top:8px"><button class="btn" id="qmore" hidden>Show more</button></div>
+
+    <span class="label">Layout</span>
+    <div class="seg" id="layouts"><button data-layout="on">On bunny</button><button data-layout="box">Box</button><button data-layout="card">Card</button></div>
+    <p class="hint" id="layoutTip" hidden>Long text? Card fits poems best.</p>
 
     <span class="label">Font</span>
     <div class="pills" id="fonts"></div>
 
-    <span class="label">Color</span>
+    <span class="label" id="colorLabel">Color</span>
     <div class="swatches" id="colors"></div>
 
     <div class="two">
@@ -158,6 +208,34 @@ nav .inner{max-width:520px;margin:0 auto;display:flex;gap:6px}
         <button class="btn" id="saveBtn">Save</button>
         <button class="btn primary" id="sendBtn">Send</button>
       </div>
+      <div class="row" id="editUsRow" style="margin-top:8px" hidden><button class="btn us" id="editUs">💌 Send to Us</button></div>
+    </div>
+  </section>
+
+  <!-- Us: shared room for two phones -->
+  <section id="v-us" hidden>
+    <h1>Us</h1>
+    <p class="sub">Bunnies, hearts and moods, just for you two</p>
+    <div class="setup" id="usJoin">
+      <label class="label" for="usName">Your name</label>
+      <input type="text" id="usName" maxlength="30" autocomplete="off" placeholder="How the other phone sees you">
+      <label class="label" for="usCode">Room code (the same on both phones)</label>
+      <input type="text" id="usCode" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="At least 8 characters">
+      <p class="note" style="text-align:left">Pick a code only you two know. Anyone with the code can see your messages.</p>
+      <div class="row"><button class="btn primary" id="usJoinBtn">Join</button></div>
+      <p class="note" id="usJoinNote"></p>
+    </div>
+    <div id="usMain" hidden>
+      <div class="moods" id="usMoods"></div>
+      <span class="label">My mood today</span>
+      <div class="pills" id="moodPills"></div>
+      <div class="row"><button class="btn primary" id="heartBtn">💗 Thinking of you</button></div>
+      <div class="row"><button class="btn" id="alertBtn">🔔 Turn on alerts</button></div>
+      <p class="note" id="usNote"></p>
+      <span class="label">Messages</span>
+      <div class="feed" id="feed"></div>
+      <p class="note">To send a bunny, pick one in Today or Find, then tap 💌 Send to Us.</p>
+      <div class="row"><button class="btn" id="inviteBtn">Copy invite link</button><button class="btn" id="leaveBtn">Leave room</button></div>
     </div>
   </section>
 
@@ -169,6 +247,8 @@ nav .inner{max-width:520px;margin:0 auto;display:flex;gap:6px}
       <input type="text" id="giphyKey2" autocomplete="off" spellcheck="false">
       <label class="label" for="pexelsKey2">Pexels key (optional, for photos) — <a href="https://www.pexels.com/api/" target="_blank" rel="noopener">get one</a></label>
       <input type="text" id="pexelsKey2" autocomplete="off" spellcheck="false" placeholder="Leave empty to skip photos">
+      <label class="label" for="usServer2">Us server link (for the Us tab)</label>
+      <input type="text" id="usServer2" autocomplete="off" spellcheck="false" placeholder="https://….supabase.co/functions/v1/bunny">
       <div class="row"><button class="btn primary" id="saveKeys2">Save</button></div>
     </div>
   </section>
@@ -177,6 +257,7 @@ nav .inner{max-width:520px;margin:0 auto;display:flex;gap:6px}
 <nav aria-label="Main" id="nav" hidden><div class="inner">
   <button class="tab" data-view="today"><span>🐰</span>Today</button>
   <button class="tab" data-view="find"><span>🔍</span>Find</button>
+  <button class="tab" data-view="us"><span>💕</span>Us<i class="badge" id="usBadge" hidden></i></button>
   <button class="tab" data-view="settings"><span>⚙️</span>Settings</button>
 </div></nav>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -213,7 +294,7 @@ const rand=a=>a[Math.floor(Math.random()*a.length)];
 const day=Math.floor((Date.now()-new Date().getTimezoneOffset()*60000)/86400000);
 const DEFAULT_GIPHY="5yU3DWhRgHorlkkf7c7eFQCW12qWwxa3";
 let keys={giphy:store.get("giphyKey")||DEFAULT_GIPHY,pexels:store.get("pexelsKey")};
-let style=Object.assign({font:"gaegu",color:"#FFFFFF",size:"m",pos:"bottom"},JSON.parse(store.get("style")||"{}"));
+let style=Object.assign({font:"gaegu",color:"#FFFFFF",size:"m",pos:"bottom",layout:"on"},JSON.parse(store.get("style")||"{}"));
 let cat=CATS[0];
 let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2800)}
 
@@ -221,31 +302,78 @@ let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("sho
 const fontOf=()=>FONTS.find(f=>f.id===style.font)||FONTS[0];
 const isLight=hex=>{const n=parseInt(hex.slice(1),16);return ((n>>16)*299+((n>>8)&255)*587+(n&255)*114)/1000>150};
 const outlineOf=c=>isLight(c)?"#3B2A4A":"#FFFFFF";
-function styleOverlay(el,widthPx,text){
-  const f=fontOf(),size=Math.round(widthPx*SIZES[style.size]);
-  el.textContent=fixQ(text);
-  el.className="overlay "+style.pos;
-  Object.assign(el.style,{fontFamily:`${f.css},"Comic Sans MS",cursive`,fontWeight:f.w,fontSize:size+"px",color:style.color,
-    webkitTextStroke:`${Math.max(3,size*.2)}px ${outlineOf(style.color)}`,lineHeight:f.id==="pacifico"?"1.3":"1.08"});
+const rgba=(hex,a)=>{const n=parseInt(hex.slice(1),16);return `rgba(${n>>16},${(n>>8)&255},${n&255},${a})`};
+const cardTop=()=>style.layout==="card"&&style.pos==="top";
+/* Bunny zoom/move: crop.z = zoom (1-3), crop.fx/fy = centre as a part of width/height (0-1) */
+function cropOf(item,W,H){
+  const c=(item&&item.crop)||{z:1,fx:.5,fy:.5},sw=W/c.z,sh=H/c.z;
+  return {sx:Math.min(Math.max(c.fx*W-sw/2,0),W-sw),sy:Math.min(Math.max(c.fy*H-sh/2,0),H-sh),sw,sh};
 }
-function drawQuote(ctx,W,H,text){
-  text=fixQ(text).trim(); if(!text)return;
-  const f=fontOf(); let size=Math.round(W*SIZES[style.size]),lines;
-  const lhMul=f.id==="pacifico"?1.3:1.08;
-  const wrap=()=>{ctx.font=`${f.w} ${size}px ${f.css}, "Comic Sans MS", cursive`;const words=text.split(/\s+/),out=[];let line="";
-    for(const w of words){const t=line?line+" "+w:w;if(ctx.measureText(t).width>W*.9&&line){out.push(line);line=w}else line=t}out.push(line);return out};
-  lines=wrap(); while((lines.length>4||lines.some(l=>ctx.measureText(l).width>W*.92))&&size>12){size-=2;lines=wrap()}
-  const lh=size*lhMul,pad=H*.04,total=lh*lines.length;
-  let y=style.pos==="top"?pad+size*.85:style.pos==="middle"?(H-total)/2+size*.85:H-pad-total+size*.85;
-  ctx.textAlign="center";ctx.lineJoin="round";ctx.miterLimit=2;
-  ctx.lineWidth=Math.max(3,size*.2);ctx.strokeStyle=outlineOf(style.color);ctx.fillStyle=style.color;
-  for(const l of lines){ctx.strokeText(l,W/2,y);ctx.fillText(l,W/2,y);y+=lh}
+/* Text layout: the screen and the file use the same rules. W,H = picture size. Line breaks are kept (poems). */
+function plan(ctx,W,H,text){
+  text=fixQ(text||"").replace(/\r/g,"").replace(/\n{3,}/g,"\n\n").trim();
+  const f=fontOf(),lay=style.layout||"on",card=lay==="card",lhMul=f.id==="pacifico"?1.3:1.08;
+  const paras=text?text.split("\n"):[],maxW=W*(card?.86:lay==="box"?.82:.9),maxLines=Math.max(4,paras.length),maxH=card?H*1.3:H*.88;
+  let size=Math.round(W*SIZES[style.size]),lines=[];
+  const wrap=()=>{ctx.font=`${f.w} ${size}px ${f.css}, "Comic Sans MS", cursive`;const out=[];
+    for(const p of paras){const words=p.trim().split(/\s+/).filter(Boolean);if(!words.length){out.push("");continue}let line="";
+      for(const w of words){const t=line?line+" "+w:w;if(ctx.measureText(t).width>maxW&&line){out.push(line);line=w}else line=t}out.push(line)}return out};
+  const tooBig=()=>lines.some(l=>ctx.measureText(l).width>maxW*1.02)||(!card&&lines.length>maxLines)||lines.length*size*lhMul>maxH;
+  lines=wrap(); while(tooBig()&&size>10){size-=1;lines=wrap()}
+  const lh=size*lhMul,total=lh*lines.length,padY=card?size*.8:lay==="box"?size*.45:0;
+  return {lay,lines,size,lh,total,padY,font:ctx.font,panelH:card&&lines.length?Math.round(total+padY*2):0};
+}
+/* Draw the text (and the card or box) on a canvas. The picture sits at imgY, size W x H. */
+function paint(ctx,W,H,P,imgY){
+  const {lines,size,lh,total,padY,lay}=P; if(!lines.length)return;
+  ctx.font=P.font;ctx.textAlign="center";ctx.textBaseline="alphabetic";ctx.lineJoin="round";ctx.miterLimit=2;
+  const write=(y0,stroke)=>{let y=y0+size*.85;for(const l of lines){if(l){if(stroke)ctx.strokeText(l,W/2,y);ctx.fillText(l,W/2,y)}y+=lh}};
+  if(lay==="card"){
+    const top=cardTop()?0:imgY+H;
+    ctx.fillStyle=style.color;ctx.fillRect(0,top,W,P.panelH);
+    ctx.fillStyle=outlineOf(style.color);write(top+padY,false);return;
+  }
+  const pos=style.pos,pad=H*.04+padY;
+  const y0=pos==="top"?imgY+pad:pos==="middle"?imgY+(H-total)/2:imgY+H-pad-total;
+  if(lay==="box"){
+    const bw=Math.min(W*.96,Math.max(...lines.map(l=>ctx.measureText(l).width))+size*1.2),bh=total+padY*2-size*.08,bx=(W-bw)/2,by=y0-padY;
+    ctx.fillStyle=rgba(outlineOf(style.color),.68);ctx.beginPath();
+    if(ctx.roundRect)ctx.roundRect(bx,by,bw,bh,size*.55);else ctx.rect(bx,by,bw,bh);ctx.fill();
+    ctx.fillStyle=style.color;write(y0,false);return;
+  }
+  ctx.lineWidth=Math.max(3,size*.2);ctx.strokeStyle=outlineOf(style.color);ctx.fillStyle=style.color;write(y0,true);
+}
+/* Live preview: the real GIF (still animated) in a zoom frame, with the text drawn on a canvas on top */
+function stage(box,item,text){
+  box._item=item;box._text=text;
+  let st=box.querySelector(".stage");
+  if(!st||st.dataset.src!==item.full){
+    box.innerHTML='<div class="stage"><div class="panel"></div><div class="frame"><img alt="Bunny"></div><div class="panel"></div><canvas class="ink" aria-hidden="true"></canvas></div>';
+    st=box.querySelector(".stage");st.dataset.src=item.full;
+    const img=st.querySelector("img");img.draggable=false;img.onload=()=>paintStage(box);img.src=item.full;
+  }
+  paintStage(box);
+}
+function paintStage(box){
+  const st=box.querySelector(".stage"),img=st&&st.querySelector("img");if(!img||!img.naturalWidth||!st.clientWidth)return;
+  const item=box._item,W=img.naturalWidth,H=img.naturalHeight,cw=st.clientWidth,ch=Math.round(cw*H/W);
+  const frame=st.querySelector(".frame");frame.style.height=ch+"px";
+  const {sx,sy,sw}=cropOf(item,W,H),k=cw/sw;
+  Object.assign(img.style,{width:W*k+"px",height:H*k+"px",left:-sx*k+"px",top:-sy*k+"px"});
+  if(box.id==="editPrev"){const z=item.crop?item.crop.z:1;frame.style.touchAction=z>1?"none":"";frame.style.cursor=z>1?"grab":""}
+  const cv=st.querySelector(".ink"),ctx=cv.getContext("2d"),P=plan(ctx,cw,ch,box._text);
+  const [pt,pb]=st.querySelectorAll(".panel"),top=cardTop();
+  pt.style.height=(top?P.panelH:0)+"px";pb.style.height=(!top?P.panelH:0)+"px";
+  const dpr=Math.min(3,window.devicePixelRatio||1),TH=ch+P.panelH;
+  cv.width=Math.round(cw*dpr);cv.height=Math.round(TH*dpr);cv.style.height=TH+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);paint(ctx,cw,ch,P,top?P.panelH:0);
+  if(box.id==="editPrev")$("layoutTip").hidden=!(P.lines.length>5&&P.lay!=="card");
 }
 
 /* ---------- Views ---------- */
 let lastView="today";
 function show(v){
-  ["setup","today","find","edit","settings"].forEach(x=>$("v-"+x).hidden=x!==v);
+  ["setup","today","find","edit","us","settings"].forEach(x=>$("v-"+x).hidden=x!==v);
   $("nav").hidden=v==="setup"; $("app").classList.toggle("wide",v==="find");
   document.querySelectorAll(".tab").forEach(t=>t.dataset.view===v?t.setAttribute("aria-current","page"):t.removeAttribute("aria-current"));
   if(v!=="edit")lastView=v;
@@ -255,11 +383,12 @@ document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
   const v=t.dataset.view;show(v);
   if(v==="find"&&!results.length)search(true);
   if(v==="today")renderToday();
-  if(v==="settings"){$("giphyKey2").value=keys.giphy;$("pexelsKey2").value=keys.pexels}
+  if(v==="settings"){$("giphyKey2").value=keys.giphy;$("pexelsKey2").value=keys.pexels;$("usServer2").value=us.server}
+  if(v==="us")openUs();
 });
 function saveKeys(g,p){keys={giphy:g.trim(),pexels:p.trim()};store.set("giphyKey",keys.giphy);store.set("pexelsKey",keys.pexels)}
 $("saveKeys").onclick=()=>{if(!$("giphyKey").value.trim())return toast("Paste your GIPHY key first");saveKeys($("giphyKey").value,"");start()};
-$("saveKeys2").onclick=()=>{saveKeys($("giphyKey2").value,$("pexelsKey2").value);toast("Saved");results=[];store.set("todayCache","");loadToday()};
+$("saveKeys2").onclick=()=>{saveKeys($("giphyKey2").value,$("pexelsKey2").value);us.server=$("usServer2").value.trim();store.set("usServer",us.server);toast("Saved");results=[];store.set("todayCache","");loadToday()};
 
 /* ---------- GIPHY / Pexels ---------- */
 class ApiErr extends Error{}
@@ -310,14 +439,12 @@ async function loadToday(another){
 }
 function renderToday(){
   if(!today)return;
-  const prev=$("todayPrev");
-  prev.innerHTML=`<img src="${today.item.full}" alt="Bunny of the day"><div class="overlay"></div>`;
-  const draw=()=>styleOverlay(prev.querySelector(".overlay"),prev.clientWidth,today.quote);
-  draw(); prev.querySelector("img").onload=draw;
+  stage($("todayPrev"),today.item,today.quote);
 }
 $("todayOther").onclick=()=>loadToday(true);
 $("todayQuote").onclick=()=>{if(!today)return;const list=QUOTES[today.group];let q;do{q=rand(list)}while(q===today.quote);today.quote=q;renderToday()};
 $("todayEdit").onclick=()=>{if(today)openEditor(today.item,today.quote)};
+$("todayUs").onclick=()=>{if(today)sendUs(today.item,today.quote,"todayProg","todayNote",["todaySend","todayEdit","todayUs"])};
 $("todaySend").onclick=()=>{if(today)sendItem(today.item,today.quote,"todayProg","todayNote",["todaySend","todayEdit"])};
 
 /* ---------- Find (bigger pages, endless scroll) ---------- */
@@ -378,20 +505,130 @@ function syncControls(){
   document.querySelectorAll("[data-font]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.font===style.font));
   document.querySelectorAll("[data-color]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.color===style.color));
   document.querySelectorAll("[data-size]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.size===style.size));
-  document.querySelectorAll("[data-pos]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.pos===style.pos));
+  document.querySelectorAll("[data-pos]").forEach(b=>{b.setAttribute("aria-pressed",b.dataset.pos===style.pos);b.disabled=style.layout==="card"&&b.dataset.pos==="middle"});
+  document.querySelectorAll("[data-layout]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.layout===style.layout));
+  $("colorLabel").textContent=style.layout==="card"?"Card color":"Color";
 }
-const redraw=()=>styleOverlay($("overlay"),$("editPrev").clientWidth,$("quoteText").value);
-function setStyle(k,v){style[k]=v;store.set("style",JSON.stringify(style));syncControls();redraw()}
+const redraw=()=>{if(sel)stage($("editPrev"),sel,$("quoteText").value)};
+function setStyle(k,v){style[k]=v;if(style.layout==="card"&&style.pos==="middle")style.pos="bottom";store.set("style",JSON.stringify(style));syncControls();redraw();
+  if(k==="font"){const f=fontOf();document.fonts&&document.fonts.load(`${f.w} 40px ${f.css}`).then(redraw,()=>{})}}
+$("layouts").onclick=e=>{const b=e.target.closest("[data-layout]");if(b)setStyle("layout",b.dataset.layout)};
+/* Bunny zoom and move */
+const clampCrop=c=>{const m=.5/c.z;c.fx=Math.min(Math.max(c.fx,m),1-m);c.fy=Math.min(Math.max(c.fy,m),1-m)};
+$("zoom").oninput=()=>{if(!sel)return;sel.crop.z=+$("zoom").value;clampCrop(sel.crop);paintStage($("editPrev"))};
+$("zoomReset").onclick=()=>{if(!sel)return;sel.crop={z:1,fx:.5,fy:.5};$("zoom").value=1;paintStage($("editPrev"))};
+let drag=null;
+$("editPrev").addEventListener("pointerdown",e=>{
+  if(!sel||sel.crop.z<=1||!e.target.closest(".frame"))return;
+  const img=$("editPrev").querySelector(".frame img");drag={x:e.clientX,y:e.clientY,fx:sel.crop.fx,fy:sel.crop.fy,w:img.offsetWidth,h:img.offsetHeight};
+  $("editPrev").setPointerCapture(e.pointerId);e.preventDefault();
+});
+$("editPrev").addEventListener("pointermove",e=>{if(!drag)return;sel.crop.fx=drag.fx-(e.clientX-drag.x)/drag.w;sel.crop.fy=drag.fy-(e.clientY-drag.y)/drag.h;clampCrop(sel.crop);paintStage($("editPrev"))});
+["pointerup","pointercancel"].forEach(t=>$("editPrev").addEventListener(t,()=>{drag=null}));
 $("fonts").onclick=e=>{const b=e.target.closest("[data-font]");if(b)setStyle("font",b.dataset.font)};
 $("colors").onclick=e=>{const b=e.target.closest("[data-color]");if(b)setStyle("color",b.dataset.color)};
 $("sizes").onclick=e=>{const b=e.target.closest("[data-size]");if(b)setStyle("size",b.dataset.size)};
 $("places").onclick=e=>{const b=e.target.closest("[data-pos]");if(b)setStyle("pos",b.dataset.pos)};
-function setQuote(q){$("quoteText").value=fixQ(q);redraw()}
+function setQuote(q){$("quoteText").value=fixQ(q).slice(0,500);redraw()}
 function openEditor(it,quote){
-  sel=it; if(it.group&&QUOTES[it.group]){cat=it.group;document.querySelectorAll("#cats .pill").forEach(p=>p.setAttribute("aria-pressed",p.textContent===cat));const pill=[...document.querySelectorAll("#cats .pill")].find(p=>p.textContent===cat);if(pill)pill.scrollIntoView({block:"nearest",inline:"center"})} $("editImg").src=it.full; $("editImg").onload=redraw;
-  $("quoteText").value=fixQ(quote||rand(QUOTES[cat])); $("editNote").textContent=""; $("prog").hidden=true;
+  sel=it; if(it.group&&QUOTES[it.group]){cat=it.group;document.querySelectorAll("#cats .pill").forEach(p=>p.setAttribute("aria-pressed",p.textContent===cat));const pill=[...document.querySelectorAll("#cats .pill")].find(p=>p.textContent===cat);if(pill)pill.scrollIntoView({block:"nearest",inline:"center"})} if(!it.crop)it.crop={z:1,fx:.5,fy:.5}; $("zoom").value=it.crop.z;
+  $("quoteText").value=fixQ(quote||rand(QUOTES[cat])).slice(0,500); $("editNote").textContent=""; $("prog").hidden=true;
   syncControls(); show("edit"); redraw();
 }
+
+/* ---------- Search quotes and poems (online, wide) ---------- */
+const QSRC=[
+  {url:"https://raw.githubusercontent.com/JamesFT/Database-Quotes-JSON/418d77f9352cdcc32b43ce64c875258ec755b4e7/quotes.json",enc:"windows-1252",map:d=>d.map(x=>({t:x.quoteText,a:x.quoteAuthor}))},
+  {url:"https://raw.githubusercontent.com/dwyl/quotes/main/quotes.json",map:d=>d.map(x=>({t:x.text,a:x.author}))},
+  {url:"https://dummyjson.com/quotes?limit=0",map:d=>d.quotes.map(x=>({t:x.quote,a:x.author}))}
+];
+const POEMS="https://poetrydb.org",WQ="https://en.wikiquote.org/w/api.php?origin=*&format=json&";
+/* Wikiquote: find the best pages for the word (a topic like "Love" or a person), then read the quotes on them */
+async function wikiSearch(term){
+  const j=await (await fetch(WQ+"action=query&list=search&srnamespace=0&srlimit=3&srsearch="+encodeURIComponent(term))).json();
+  const titles=((j.query&&j.query.search)||[]).map(x=>x.title).slice(0,2);
+  const pages=await Promise.allSettled(titles.map(t=>fetch(WQ+"action=parse&prop=text|categories&redirects=1&page="+encodeURIComponent(t)).then(r=>r.json())));
+  const out=[];
+  pages.forEach((pg,n)=>{
+    if(pg.status!=="fulfilled"||!pg.value.parse)return;
+    const title=pg.value.parse.title||titles[n],person=(pg.value.parse.categories||[]).some(c=>/births|deaths|people|writers|poets/i.test(c["*"]||""));
+    const doc=new DOMParser().parseFromString(pg.value.parse.text["*"],"text/html"),root=doc.querySelector(".mw-parser-output")||doc.body;
+    let stop=false,count=0;
+    for(const el of root.children){
+      const h=el.matches("h2,h3,.mw-heading")?el.textContent:"";
+      if(h&&/see also|external links|references|notes|sources|misattributed|disputed|about /i.test(h)){if(/^(see also|external links|references)/i.test(h.trim()))stop=true;continue}
+      if(stop||count>=60||el.tagName!=="UL")continue;
+      for(const li of el.children){
+        if(li.tagName!=="LI")continue;
+        const c=li.cloneNode(true);c.querySelectorAll("ul,ol,sup,.reference,style").forEach(x=>x.remove());
+        const t=fixQ(c.textContent.replace(/\s+/g," ").trim());if(t.length<8||t.length>280)continue;
+        const sub=li.querySelector(":scope > ul > li"),by=sub?fixQ(sub.textContent.replace(/\s+/g," ").trim().split(/[,(\n]/)[0]).slice(0,40):"";
+        out.push({kind:"quote",t,a:person?title:by,web:true});if(++count>=60)break;
+      }
+    }
+  });
+  return out;
+}
+const normT=t=>fixQ(t).toLowerCase().replace(/[^a-z0-9 ]+/g,"").replace(/\s+/g," ").trim();
+let bank=null,qAll=[],qKind="all",qShown=0;
+async function quoteBank(){
+  if(bank)return {list:bank,online:true};
+  const got=await Promise.allSettled(QSRC.map(s=>fetch(s.url).then(r=>{if(!r.ok)throw new Error("net");return r.arrayBuffer()}).then(b=>s.map(JSON.parse(new TextDecoder(s.enc||"utf-8").decode(b))))));
+  const keys=new Set(),out=[];
+  const add=(t,a,mine)=>{t=fixQ(String(t||"")).trim();const k=normT(t);if(!t||keys.has(k))return;keys.add(k);out.push({kind:"quote",t,a:fixQ(String(a||"")).replace(/,?\s*type\.fit$/i,"").trim(),mine})};
+  ALLQ.forEach(t=>add(t,"",true));
+  got.forEach(g=>{if(g.status==="fulfilled")g.value.forEach(q=>add(q.t,q.a,false))});
+  const online=got.some(g=>g.status==="fulfilled");if(online)bank=out;
+  return {list:out,online};
+}
+function excerpt(p,words){
+  const L=p.lines.map(l=>fixQ(l).trim());
+  if(L.filter(Boolean).length<=12)return L.join("\n").replace(/\n{3,}/g,"\n\n").trim();
+  const low=L.map(l=>l.toLowerCase());
+  let i=low.findIndex(l=>words.every(w=>l.includes(w)));if(i<0)i=low.findIndex(l=>words.some(w=>l.includes(w)));if(i<0)i=L.findIndex(Boolean);
+  let s=i,e=i;while(s>0&&L[s-1])s--;while(e<L.length-1&&L[e+1])e++;
+  if(e-s+1>8){s=Math.max(s,i-3);e=Math.min(e,s+7)}
+  return L.slice(s,e+1).join("\n");
+}
+async function poemSearch(term,words){
+  const t=encodeURIComponent(term.replace(/[;/\\:]+/g," ").trim()),F="/title,author,lines,linecount";
+  const urls=[`${POEMS}/lines,poemcount/${t};40${F}`,`${POEMS}/title,poemcount/${t};20${F}`,`${POEMS}/author,poemcount/${t};20${F}`];
+  const got=await Promise.allSettled(urls.map(u=>fetch(u).then(r=>{if(!r.ok)throw new Error("net");return r.json()})));
+  const seenP=new Set(),out=[];
+  got.forEach(g=>{if(g.status!=="fulfilled"||!Array.isArray(g.value))return;g.value.forEach(p=>{const k=p.title+"|"+p.author;if(seenP.has(k)||!Array.isArray(p.lines))return;seenP.add(k);out.push({kind:"poem",t:excerpt(p,words),a:fixQ(p.author||""),title:fixQ(p.title||"")})})});
+  return {list:out.filter(p=>p.t),online:got.some(g=>g.status==="fulfilled")};
+}
+async function quoteSearch(){
+  const term=$("qq").value.trim();if(!term)return toast("Type a word to search");
+  $("qq").blur();$("qgo").disabled=true;$("qres").innerHTML="";$("qmore").hidden=true;$("qkinds").hidden=true;$("qnote").textContent="Searching quotes and poems…";
+  const words=term.toLowerCase().split(/\s+/).filter(Boolean),phrase=term.toLowerCase();
+  const [qb,pb,wq]=await Promise.all([quoteBank(),poemSearch(term,words),wikiSearch(term).then(l=>({list:l,online:true}),()=>({list:[],online:false}))]);
+  const hits=qb.list.filter(q=>{const h=(q.t+" "+q.a).toLowerCase();return words.every(w=>h.includes(w))});
+  const rank=q=>(q.mine?0:2)+(q.t.toLowerCase().includes(phrase)?0:1);
+  hits.sort((a,b)=>rank(a)-rank(b)||a.t.length-b.t.length);
+  const have=new Set(hits.map(q=>normT(q.t))),wl=wq.list.filter(q=>{const k=normT(q.t);if(have.has(k))return false;have.add(k);return true});
+  qAll=[...hits,...wl,...pb.list];qKind="all";
+  document.querySelectorAll("[data-qk]").forEach(b=>{const n=b.dataset.qk==="all"?qAll.length:qAll.filter(x=>x.kind===b.dataset.qk).length;b.textContent=(b.dataset.qk==="all"?"All":b.dataset.qk==="quote"?"Quotes":"Poems")+" "+n;b.setAttribute("aria-pressed",b.dataset.qk==="all")});
+  $("qkinds").hidden=!qAll.length;
+  const off=!qb.online&&!pb.online&&!wq.online;
+  $("qnote").textContent=off?"Can't reach the internet. Showing the app's own quotes only.":!qAll.length?`Nothing found for "${term}". Try another word.`:"";
+  qShown=0;showQ();$("qgo").disabled=false;
+}
+function showQ(){
+  const list=qKind==="all"?qAll:qAll.filter(x=>x.kind===qKind),next=list.slice(qShown,qShown+30);
+  $("qres").insertAdjacentHTML("beforeend",next.map(x=>{const i=qAll.indexOf(x),meta=x.kind==="poem"?`Poem: ${esc(x.title)}${x.a?", "+esc(x.a):""}`:`Quote${x.mine?" (Bunny Quotes)":x.a?": "+esc(x.a):""}`;
+    return `<button class="qitem" data-q="${i}"><p>${esc(x.t)}</p><small>${meta}</small></button>`}).join(""));
+  qShown+=next.length;$("qmore").hidden=qShown>=list.length;
+}
+$("qgo").onclick=quoteSearch;
+$("qq").onkeydown=e=>{if(e.key==="Enter")quoteSearch()};
+$("qmore").onclick=showQ;
+$("qkinds").onclick=e=>{const b=e.target.closest("[data-qk]");if(!b)return;qKind=b.dataset.qk;document.querySelectorAll("[data-qk]").forEach(x=>x.setAttribute("aria-pressed",x===b));$("qres").innerHTML="";qShown=0;showQ()};
+$("qres").onclick=e=>{
+  const b=e.target.closest("[data-q]");if(!b)return;const x=qAll[+b.dataset.q];
+  setQuote(x.t+($("qauthor").checked&&x.a?"\n- "+x.a:""));
+  $("editPrev").scrollIntoView({behavior:"smooth",block:"start"});
+};
 $("editBack").onclick=()=>{show(lastView);if(lastView==="today")renderToday()};
 $("quoteText").oninput=redraw;
 $("newQuote").onclick=()=>{let q;do{q=rand(QUOTES[cat])}while(fixQ(q)===$("quoteText").value&&QUOTES[cat].length>1);setQuote(q)};
@@ -402,9 +639,10 @@ async function makeFile(item,text,bar){
   const f=fontOf(); try{await document.fonts.load(`${f.w} 40px ${f.css}`)}catch(e){}
   if(item.kind==="photo"){
     const img=new Image();img.crossOrigin="anonymous";img.src=item.full;await img.decode();
-    const k=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight));
-    const c=document.createElement("canvas");c.width=Math.round(img.naturalWidth*k);c.height=Math.round(img.naturalHeight*k);
-    const ctx=c.getContext("2d");ctx.drawImage(img,0,0,c.width,c.height);drawQuote(ctx,c.width,c.height,text);bar.style.width="100%";
+    const W=img.naturalWidth,H=img.naturalHeight,k=Math.min(1,1600/Math.max(W,H)),OW=Math.round(W*k),OH=Math.round(H*k),{sx,sy,sw,sh}=cropOf(item,W,H);
+    const c=document.createElement("canvas"),ctx=c.getContext("2d"),P=plan(ctx,OW,OH,text),imgY=cardTop()?P.panelH:0;
+    c.width=OW;c.height=OH+P.panelH;ctx.fillStyle="#FFFFFF";ctx.fillRect(0,0,c.width,c.height);
+    ctx.drawImage(img,sx,sy,sw,sh,0,imgY,OW,OH);paint(ctx,OW,OH,P,imgY);bar.style.width="100%";
     const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",.9));
     return new File([blob],"bunny-quote.jpg",{type:"image/jpeg"});
   }
@@ -414,16 +652,17 @@ async function makeFile(item,text,bar){
   const W=gif.lsd.width,H=gif.lsd.height,scale=Math.min(1,480/W),OW=Math.round(W*scale),OH=Math.round(H*scale);
   const full=document.createElement("canvas");full.width=W;full.height=H;const fctx=full.getContext("2d",{willReadFrequently:true});
   const patch=document.createElement("canvas"),pctx=patch.getContext("2d");
-  const out=document.createElement("canvas");out.width=OW;out.height=OH;const octx=out.getContext("2d",{willReadFrequently:true});
+  const out=document.createElement("canvas"),octx=out.getContext("2d",{willReadFrequently:true}),P=plan(octx,OW,OH,text),imgY=cardTop()?P.panelH:0,TH=OH+P.panelH,{sx,sy,sw,sh}=cropOf(item,W,H);
+  out.width=OW;out.height=TH;
   const enc=GIFEncoder();
   for(let i=0;i<frames.length;i++){
     const fr=frames[i],{width:w,height:h,left,top}=fr.dims;
     const saved=fr.disposalType===3?fctx.getImageData(0,0,W,H):null;
     patch.width=w;patch.height=h;pctx.putImageData(new ImageData(new Uint8ClampedArray(fr.patch),w,h),0,0);
     fctx.drawImage(patch,left,top);
-    octx.fillStyle="#FFFFFF";octx.fillRect(0,0,OW,OH);octx.drawImage(full,0,0,OW,OH);drawQuote(octx,OW,OH,text);
-    const data=octx.getImageData(0,0,OW,OH).data,pal=quantize(data,256);
-    enc.writeFrame(applyPalette(data,pal),OW,OH,{palette:pal,delay:Math.max(20,fr.delay||100),repeat:0});
+    octx.fillStyle="#FFFFFF";octx.fillRect(0,0,OW,TH);octx.drawImage(full,sx,sy,sw,sh,0,imgY,OW,OH);paint(octx,OW,OH,P,imgY);
+    const data=octx.getImageData(0,0,OW,TH).data,pal=quantize(data,256);
+    enc.writeFrame(applyPalette(data,pal),OW,TH,{palette:pal,delay:Math.max(20,fr.delay||100),repeat:0});
     if(fr.disposalType===2)fctx.clearRect(left,top,w,h);
     if(saved)fctx.putImageData(saved,0,0);
     bar.style.width=Math.round((i+1)/frames.length*100)+"%";
@@ -446,12 +685,172 @@ async function sendItem(item,text,progId,noteId,btnIds){
   catch(e){if(e&&e.name==="AbortError")return}
   download(f);toast("Saved to Downloads. Attach it in WhatsApp or Messenger.");
 }
+$("editUs").onclick=()=>sendUs(sel,$("quoteText").value,"prog","editNote",["sendBtn","saveBtn","editUs"]);
 $("sendBtn").onclick=()=>sendItem(sel,$("quoteText").value,"prog","editNote",["sendBtn","saveBtn"]);
 $("saveBtn").onclick=async()=>{const f=await build(sel,$("quoteText").value,"prog","editNote",["sendBtn","saveBtn"]);if(f){download(f);toast("Saved to Downloads")}};
 
+/* ---------- Us: shared room for two phones (Supabase "bunny" function) ---------- */
+const MOODS=[{id:"Happy",e:"😊",q:"bunny happy"},{id:"Love",e:"🥰",q:"bunny love"},{id:"Miss you",e:"🥺",q:"bunny miss you"},{id:"Tired",e:"😴",q:"sleepy bunny"},{id:"Sad",e:"😢",q:"bunny sad"},{id:"Excited",e:"🤩",q:"bunny dance"}];
+const moodOf=id=>MOODS.find(m=>m.id===id)||{id,e:"🐰"};
+const esc=t=>String(t??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const newId=()=>Array.from(crypto.getRandomValues(new Uint8Array(12)),b=>b.toString(16).padStart(2,"0")).join("");
+let us={server:store.get("usServer"),name:store.get("usName"),room:store.get("usRoom"),device:store.get("usDevice")||newId(),partner:store.get("usPartner")};
+store.set("usDevice",us.device);
+let usData={items:[],moods:[]},usTimer=null;
+const joined=()=>!!(us.server&&us.room&&us.name);
+async function roomOf(code){
+  const norm=code.trim().toLowerCase().replace(/\s+/g," ");
+  const h=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("bunny-quotes|"+norm));
+  return Array.from(new Uint8Array(h),b=>b.toString(16).padStart(2,"0")).join("");
+}
+async function api(body){
+  const r=await fetch(us.server,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(Object.assign({room:us.room,device:us.device,name:us.name},body))});
+  if(!r.ok)throw new Error("srv");return r.json();
+}
+function usButtons(){
+  const label="💌 Send to "+(us.partner||"Us");
+  $("todayUsRow").hidden=$("editUsRow").hidden=!joined();
+  $("todayUs").textContent=$("editUs").textContent=label;
+}
+function openUs(){
+  $("usJoin").hidden=joined(); $("usMain").hidden=!joined();
+  if(!joined()){$("usName").value=$("usName").value||us.name;if(!us.server)$("usJoinNote").textContent="First add the Us server link in Settings, or open the invite link.";return}
+  renderUs(); syncUs(); alertState();
+}
+$("usJoinBtn").onclick=async()=>{
+  const name=$("usName").value.trim(),code=$("usCode").value;
+  if(!name)return toast("Type your name");
+  if(code.trim().length<8)return toast("Room code needs at least 8 characters");
+  if(!us.server)return toast("Add the Us server link in Settings first");
+  $("usJoinBtn").disabled=true;$("usJoinNote").textContent="Joining…";
+  const room=await roomOf(code),old={...us};
+  us.name=name;us.room=room;
+  try{await api({action:"sync"});store.set("usName",name);store.set("usRoom",room);store.set("usCode",code.trim());$("usJoinNote").textContent="";$("usCode").value="";usButtons();openUs();askAlerts()}
+  catch(e){us=old;$("usJoinNote").textContent="Can’t reach the Us server. Check the link in Settings and your internet."}
+  $("usJoinBtn").disabled=false;
+};
+$("leaveBtn").onclick=async()=>{
+  if(!confirm("Leave this room on this phone? Messages stay in the room."))return;
+  try{await api({action:"unsubscribe"})}catch(e){}
+  try{const reg=await navigator.serviceWorker.getRegistration();const s=reg&&await reg.pushManager.getSubscription();if(s)await s.unsubscribe()}catch(e){}
+  ["usRoom","usCode","usPartner","usSeen"].forEach(k=>store.set(k,""));us.room="";us.partner="";usData={items:[],moods:[]};
+  usButtons();badge();openUs();
+};
+$("inviteBtn").onclick=async()=>{
+  const code=store.get("usCode");if(!code)return toast("Leave and join again to make an invite link");
+  const tok=btoa(unescape(encodeURIComponent(JSON.stringify({s:us.server,c:code})))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  const link=location.origin+location.pathname+"#join="+tok;
+  try{if(navigator.share){await navigator.share({title:"Bunny Quotes",text:"Join me in Bunny Quotes 🐰💕",url:link});return}}catch(e){if(e&&e.name==="AbortError")return}
+  try{await navigator.clipboard.writeText(link);toast("Invite link copied. Send it to her.")}catch(e){prompt("Copy this invite link:",link)}
+};
+function readInvite(){
+  const m=location.hash.match(/^#join=([A-Za-z0-9_-]+)$/);if(!m)return false;
+  history.replaceState(null,"",location.pathname);
+  try{const d=JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g,"+").replace(/_/g,"/")))));
+    if(d.s&&/^(https:\/\/|http:\/\/(127\.0\.0\.1|localhost)[:/])/.test(d.s)){us.server=d.s;store.set("usServer",d.s)}
+    if(!joined()&&d.c)$("usCode").value=d.c;
+  }catch(e){toast("This invite link is broken. Ask for a new one.")}
+  return true;
+}
+$("moodPills").innerHTML=MOODS.map(m=>`<button class="pill" data-mood="${m.id}">${m.e} ${m.id}</button>`).join("");
+$("moodPills").onclick=async e=>{
+  const b=e.target.closest("[data-mood]");if(!b)return;const m=moodOf(b.dataset.mood);
+  document.querySelectorAll("[data-mood]").forEach(x=>x.disabled=true);
+  let gif="";try{const {items}=await giphy("gifs",m.q,1,Math.floor(Math.random()*25));if(items[0])gif=items[0].preview}catch(e){}
+  try{await api({action:"mood",mood:m.id,gif});toast("Mood shared: "+m.e+" "+m.id);await syncUs()}catch(e){toast("Couldn’t share your mood. Check your internet.")}
+  document.querySelectorAll("[data-mood]").forEach(x=>x.disabled=false);
+};
+$("heartBtn").onclick=async()=>{
+  $("heartBtn").disabled=true;
+  try{await api({action:"heart"});toast("💗 Sent to "+(us.partner||"your room"));await syncUs()}catch(e){toast("Couldn’t send. Check your internet.")}
+  setTimeout(()=>$("heartBtn").disabled=false,1500);
+};
+const ago=t=>{const s=(Date.now()-new Date(t))/1000;if(s<60)return"just now";if(s<3600)return Math.floor(s/60)+" min ago";if(s<86400)return Math.floor(s/3600)+" h ago";return new Date(t).toLocaleDateString(undefined,{day:"numeric",month:"short"})};
+function renderUs(){
+  const theirs=usData.moods.filter(m=>!m.mine),mine=usData.moods.find(m=>m.mine);
+  const card=(m,who)=>{const mm=moodOf(m.mood);return `<div class="mood">${m.gif?`<img src="${esc(m.gif)}" alt="">`:`<div style="width:84px;height:84px;flex:none;border-radius:16px;background:var(--soft);display:grid;place-items:center;font-size:2.6rem">${mm.e}</div>`}<div><small>${esc(who)}</small><b>${mm.e} ${esc(m.mood)}</b><small>${ago(m.at)}</small></div></div>`};
+  $("usMoods").innerHTML=(theirs.length?theirs.map(m=>card(m,m.name)).join(""):`<p class="note">No mood from ${esc(us.partner||"your partner")} yet.</p>`)+(mine?card(mine,"You"):"");
+  document.querySelectorAll("[data-mood]").forEach(x=>x.setAttribute("aria-pressed",!!mine&&x.dataset.mood===mine.mood));
+  $("feed").innerHTML=usData.items.length?usData.items.map(i=>{
+    const who=i.mine?"You":i.name,meta=`<div class="meta">${esc(who)} · ${ago(i.at)}</div>`;
+    if(i.kind==="heart")return `<div class="msg${i.mine?" mine":""}">${meta}<div class="heart">💗<span>${i.mine?"You sent a heart":esc(i.name)+" is thinking of you"}</span></div></div>`;
+    return `<div class="msg${i.mine?" mine":""}">${meta}${i.url?`<img src="${esc(i.url)}" alt="${esc(i.quote||"Bunny")}" loading="lazy"><button class="btn save" data-save="${i.id}">Save</button>`:`<p class="note">This bunny has expired.</p>`}</div>`;
+  }).join(""):`<p class="note">No messages yet. Send the first bunny!</p>`;
+}
+$("feed").onclick=async e=>{
+  const b=e.target.closest("[data-save]");if(!b)return;const i=usData.items.find(x=>String(x.id)===b.dataset.save);if(!i||!i.url)return;
+  try{const blob=await (await fetch(i.url)).blob();download(new File([blob],"bunny-quote."+(blob.type==="image/gif"?"gif":"jpg"),{type:blob.type}));toast("Saved to Downloads")}catch(e){toast("Couldn’t save. Check your internet.")}
+};
+function badge(){
+  const seen=+store.get("usSeen")||0,n=usData.items.filter(i=>!i.mine&&i.id>seen).length;
+  $("usBadge").hidden=!n;$("usBadge").textContent=n>9?"9+":n;
+}
+async function syncUs(){
+  if(!joined())return;
+  try{
+    usData=await api({action:"sync"});
+    const p=[...usData.moods,...usData.items].find(x=>!x.mine);
+    if(p&&p.name!==us.partner){us.partner=p.name;store.set("usPartner",p.name);usButtons()}
+    if(!$("v-us").hidden){renderUs();const top=usData.items[0];if(top)store.set("usSeen",top.id);$("usNote").textContent=""}
+    badge();
+  }catch(e){if(!$("v-us").hidden)$("usNote").textContent="Can’t reach the Us server right now."}
+}
+async function sendUs(item,text,progId,noteId,btnIds){
+  if(!joined())return toast("Join a room in the Us tab first");
+  const f=await build(item,text,progId,noteId,btnIds);if(!f)return;
+  if(f.size>8000000)return toast("This one is too big to send. Try another bunny.");
+  btnIds.forEach(id=>$(id).disabled=true);$(noteId).textContent="Sending…";
+  try{
+    const q=new URLSearchParams({action:"bunny",room:us.room,device:us.device,name:us.name,quote:fixQ(text).trim().slice(0,120)});
+    const r=await fetch(us.server+"?"+q,{method:"POST",headers:{"content-type":f.type},body:f});
+    if(!r.ok)throw new Error("srv");
+    $(noteId).textContent="";toast("💌 Sent to "+(us.partner||"your room"));syncUs();
+  }catch(e){$(noteId).textContent="Couldn’t send. Check your internet and try again."}
+  btnIds.forEach(id=>$(id).disabled=false);
+}
+/* Alerts (web push) */
+const b64key=s=>{const p="=".repeat((4-s.length%4)%4),b=atob((s+p).replace(/-/g,"+").replace(/_/g,"/"));return Uint8Array.from(b,c=>c.charCodeAt(0))};
+const pushOk=()=>"serviceWorker"in navigator&&"PushManager"in window&&"Notification"in window&&location.protocol==="https:";
+async function subscribe(){
+  const reg=await navigator.serviceWorker.ready;
+  let s=await reg.pushManager.getSubscription();
+  if(!s){const {key}=await api({action:"vapid"});s=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64key(key)})}
+  await api({action:"subscribe",sub:s.toJSON()});
+}
+async function alertState(){
+  const btn=$("alertBtn");
+  if(!pushOk()){btn.hidden=true;return}
+  btn.hidden=false;
+  if(Notification.permission==="denied"){btn.textContent="🔕 Alerts blocked";btn.dataset.state="blocked";return}
+  const reg=await navigator.serviceWorker.getRegistration(),s=reg&&await reg.pushManager.getSubscription();
+  const on=Notification.permission==="granted"&&!!s;
+  btn.textContent=on?"🔔 Alerts on (tap to turn off)":"🔔 Turn on alerts";btn.dataset.state=on?"on":"off";
+}
+async function askAlerts(){
+  if(!pushOk())return;
+  try{if(await Notification.requestPermission()==="granted"){await subscribe();toast("🔔 Alerts on")}}catch(e){toast("Couldn’t turn on alerts.")}
+  alertState();
+}
+$("alertBtn").onclick=async()=>{
+  const st=$("alertBtn").dataset.state;
+  if(st==="blocked")return toast("Alerts are blocked. In Chrome: ⋮ > Settings > Site settings > Notifications, allow this site.");
+  if(st==="on"){try{await api({action:"unsubscribe"});const reg=await navigator.serviceWorker.getRegistration(),s=reg&&await reg.pushManager.getSubscription();if(s)await s.unsubscribe();toast("Alerts off")}catch(e){toast("Couldn’t turn off alerts.")}return alertState()}
+  askAlerts();
+};
+if("serviceWorker"in navigator)navigator.serviceWorker.addEventListener("message",e=>{if(e.data&&e.data.open==="us"){show("us");openUs()}});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")syncUs()});
+function startUs(){
+  usButtons();
+  const invited=readInvite();
+  if(joined()){syncUs();if(pushOk()&&Notification.permission==="granted")subscribe().catch(()=>{})}
+  clearInterval(usTimer);usTimer=setInterval(()=>{if(document.visibilityState==="visible")syncUs()},20000);
+  if(invited||location.hash==="#us"){if(location.hash==="#us")history.replaceState(null,"",location.pathname);show("us");openUs();return true}
+  return false;
+}
+
 /* ---------- Start ---------- */
 $("date").textContent=new Date().toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long"});
-function start(){if(!keys.giphy){show("setup");return}show("today");loadToday()}
+function start(){if(!keys.giphy){show("setup");return}show("today");loadToday();startUs()}
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{if(!$("v-today").hidden&&today)renderToday()});
 start();
 </script>
