@@ -608,35 +608,67 @@ const QSRC=[
   {url:"https://raw.githubusercontent.com/dwyl/quotes/main/quotes.json",map:d=>d.map(x=>({t:x.text,a:x.author}))},
   {url:"https://dummyjson.com/quotes?limit=0",map:d=>d.quotes.map(x=>({t:x.quote,a:x.author}))}
 ];
-const POEMS="https://poetrydb.org",WQ="https://en.wikiquote.org/w/api.php?origin=*&format=json&";
-/* Wikiquote: find the best pages for the word (a topic like "Love" or a person), then read the quotes on them */
-async function wikiSearch(term){
-  const j=await (await fetch(WQ+"action=query&list=search&srnamespace=0&srlimit=3&srsearch="+encodeURIComponent(term))).json();
-  const titles=((j.query&&j.query.search)||[]).map(x=>x.title).slice(0,2);
-  const pages=await Promise.allSettled(titles.map(t=>fetch(WQ+"action=parse&prop=text|categories&redirects=1&page="+encodeURIComponent(t)).then(r=>r.json())));
-  const out=[];
-  pages.forEach((pg,n)=>{
-    if(pg.status!=="fulfilled"||!pg.value.parse)return;
-    const title=pg.value.parse.title||titles[n],person=(pg.value.parse.categories||[]).some(c=>/births|deaths|people|writers|poets/i.test(c["*"]||""));
-    const doc=new DOMParser().parseFromString(pg.value.parse.text["*"],"text/html"),root=doc.querySelector(".mw-parser-output")||doc.body;
-    let stop=false,count=0;
-    for(const el of root.children){
-      const h=el.matches("h2,h3,.mw-heading")?el.textContent:"";
-      if(h&&/see also|external links|references|notes|sources|misattributed|disputed|about /i.test(h)){if(/^(see also|external links|references)/i.test(h.trim()))stop=true;continue}
-      if(stop||count>=60||el.tagName!=="UL")continue;
-      for(const li of el.children){
-        if(li.tagName!=="LI")continue;
-        const c=li.cloneNode(true);c.querySelectorAll("ul,ol,sup,.reference,style").forEach(x=>x.remove());
-        const t=fixQ(c.textContent.replace(/\s+/g," ").trim());if(t.length<8||t.length>280)continue;
-        const sub=li.querySelector(":scope > ul > li"),by=sub?fixQ(sub.textContent.replace(/\s+/g," ").trim().split(/[,(\n]/)[0]).slice(0,40):"";
-        out.push({kind:"quote",t,a:person?title:by,web:true});if(++count>=60)break;
-      }
+const POEMS="https://poetrydb.org",WQ="https://en.wikiquote.org/w/api.php?origin=*&format=json&",WS="https://en.wikisource.org/w/api.php?origin=*&format=json&";
+const PAGES=10; /* web pages read per source on each search step */
+/* whole-word match: "cute" finds cute, cuter, cuteness, not executed or acute */
+const escRe=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+let qRes=[];
+const hasWords=t=>qRes.every(r=>r.test(t));
+const wikiPage=(api,t)=>fetch(api+"action=parse&prop=text|categories&redirects=1&page="+encodeURIComponent(t)).then(r=>{if(!r.ok)throw new Error("net");return r.json()});
+/* Wikiquote: any page that holds the word; keep only the quotes that hold it */
+async function wqFind(term,off){
+  const j=await (await fetch(WQ+"action=query&list=search&srnamespace=0&srlimit="+PAGES+"&sroffset="+off+"&srsearch="+encodeURIComponent(term))).json();
+  return {titles:((j.query&&j.query.search)||[]).map(x=>x.title),next:j.continue&&j.continue.sroffset!=null?j.continue.sroffset:null};
+}
+function wqRead(pv,title0){
+  const title=pv.title||title0,person=(pv.categories||[]).some(c=>/births|deaths|people|writers|poets/i.test(c["*"]||""));
+  const doc=new DOMParser().parseFromString(pv.text["*"],"text/html"),root=doc.querySelector(".mw-parser-output")||doc.body;
+  let stop=false;const out=[];
+  for(const el of root.children){
+    const h=el.matches("h2,h3,.mw-heading")?el.textContent:"";
+    if(h&&/see also|external links|references|notes|sources|misattributed|disputed|about /i.test(h)){if(/^(see also|external links|references)/i.test(h.trim()))stop=true;continue}
+    if(stop||el.tagName!=="UL")continue;
+    for(const li of el.children){
+      if(li.tagName!=="LI")continue;
+      const c=li.cloneNode(true);c.querySelectorAll("ul,ol,sup,.reference,style").forEach(x=>x.remove());
+      const t=fixQ(c.textContent.replace(/\s+/g," ").trim());if(t.length<8||t.length>280||!hasWords(t))continue;
+      const sub=li.querySelector(":scope > ul > li"),by=sub?fixQ(sub.textContent.replace(/\s+/g," ").trim().split(/[,(\n]/)[0]).slice(0,40):"";
+      out.push({kind:"quote",t,a:person?title:by,web:true});
     }
-  });
+  }
   return out;
 }
+/* Wikisource: pages that hold the word and are filed as poems; keep the verse that holds it */
+async function wsFind(term,off){
+  const j=await (await fetch(WS+"action=query&generator=search&gsrnamespace=0&gsrlimit=50&gsroffset="+off+"&prop=categories&cllimit=max&clshow=!hidden&gsrsearch="+encodeURIComponent(term))).json();
+  const pages=Object.values((j.query&&j.query.pages)||{}).sort((a,b)=>(a.index||0)-(b.index||0));
+  const P=/\b(poems?|poetry|poets?|sonnets?|ballads?|hymns?|verses?|odes?|songs?|lyrics)\b/i,titles=pages.filter(p=>P.test(p.title)||(p.categories||[]).some(c=>P.test(c.title))).map(p=>p.title).slice(0,PAGES);
+  return {titles,next:j.continue&&j.continue.gsroffset!=null?j.continue.gsroffset:null};
+}
+function wsRead(pv,title0){
+  const doc=new DOMParser().parseFromString(pv.text["*"],"text/html");
+  const g=id=>{const e=doc.getElementById(id);return e?fixQ(e.textContent.replace(/\s+/g," ").trim()):""};
+  const a=g("ws-author"),title=g("ws-title")||pv.title||title0,out=[];
+  for(const pd of doc.querySelectorAll(".poem")){
+    pd.querySelectorAll("sup,.reference,style,.pagenum,.ws-pagenum,.ws-noexport").forEach(x=>x.remove());
+    const html=pd.innerHTML.replace(/<br\s*\/?>/gi,"\n").replace(/<\/p>\s*<p[^>]*>/gi,"\n\n");
+    const txt=new DOMParser().parseFromString(html,"text/html").body.textContent;
+    const lines=txt.split("\n").map(l=>l.replace(/\s+/g," ").trim());
+    while(lines.length&&!lines[0])lines.shift();
+    if(lines.filter(Boolean).length<2||!hasWords(lines.join("\n")))continue;
+    out.push({kind:"poem",t:excerpt({lines}),a,title,web:true});if(out.length>=5)break;
+  }
+  return out;
+}
+async function wikiStep(find,read,api,term,off){
+  const f=await find(term,off);
+  const pages=await Promise.allSettled(f.titles.map(t=>wikiPage(api,t)));
+  const out=[];
+  pages.forEach((pg,n)=>{if(pg.status!=="fulfilled"||!pg.value.parse)return;try{out.push(...read(pg.value.parse,f.titles[n]))}catch(_){}});
+  return {list:out,next:f.next};
+}
 const normT=t=>fixQ(t).toLowerCase().replace(/[^a-z0-9 ]+/g,"").replace(/\s+/g," ").trim();
-let bank=null,qAll=[],qKind="all",qShown=0;
+let bank=null,qAll=[],qKind="all",qShown=0,qHave=new Set(),web=null,qBusy=false;
 async function quoteBank(){
   if(bank)return {list:bank,online:true};
   const got=await Promise.allSettled(QSRC.map(s=>fetch(s.url).then(r=>{if(!r.ok)throw new Error("net");return r.arrayBuffer()}).then(b=>s.map(JSON.parse(new TextDecoder(s.enc||"utf-8").decode(b))))));
@@ -647,48 +679,83 @@ async function quoteBank(){
   const online=got.some(g=>g.status==="fulfilled");if(online)bank=out;
   return {list:out,online};
 }
-function excerpt(p,words){
+function excerpt(p){
   const L=p.lines.map(l=>fixQ(l).trim());
   if(L.filter(Boolean).length<=12)return L.join("\n").replace(/\n{3,}/g,"\n\n").trim();
-  const low=L.map(l=>l.toLowerCase());
-  let i=low.findIndex(l=>words.every(w=>l.includes(w)));if(i<0)i=low.findIndex(l=>words.some(w=>l.includes(w)));if(i<0)i=L.findIndex(Boolean);
+  let i=L.findIndex(l=>hasWords(l));if(i<0)i=L.findIndex(l=>qRes.some(r=>r.test(l)));if(i<0)i=L.findIndex(Boolean);
   let s=i,e=i;while(s>0&&L[s-1])s--;while(e<L.length-1&&L[e+1])e++;
   if(e-s+1>8){s=Math.max(s,i-3);e=Math.min(e,s+7)}
   return L.slice(s,e+1).join("\n");
 }
-async function poemSearch(term,words){
+async function poemSearch(term){
   const t=encodeURIComponent(term.replace(/[;/\\:]+/g," ").trim()),F="/title,author,lines,linecount";
   const urls=[`${POEMS}/lines,poemcount/${t};40${F}`,`${POEMS}/title,poemcount/${t};20${F}`,`${POEMS}/author,poemcount/${t};20${F}`];
   const got=await Promise.allSettled(urls.map(u=>fetch(u).then(r=>{if(!r.ok)throw new Error("net");return r.json()})));
   const seenP=new Set(),out=[];
-  got.forEach(g=>{if(g.status!=="fulfilled"||!Array.isArray(g.value))return;g.value.forEach(p=>{const k=p.title+"|"+p.author;if(seenP.has(k)||!Array.isArray(p.lines))return;seenP.add(k);out.push({kind:"poem",t:excerpt(p,words),a:fixQ(p.author||""),title:fixQ(p.title||"")})})});
+  got.forEach(g=>{if(g.status!=="fulfilled"||!Array.isArray(g.value))return;g.value.forEach(p=>{const k=p.title+"|"+p.author;if(seenP.has(k)||!Array.isArray(p.lines))return;seenP.add(k);
+    if(!hasWords(p.lines.join("\n")+"\n"+(p.title||"")+"\n"+(p.author||"")))return;
+    out.push({kind:"poem",t:excerpt(p),a:fixQ(p.author||""),title:fixQ(p.title||"")})})});
   return {list:out.filter(p=>p.t),online:got.some(g=>g.status==="fulfilled")};
+}
+/* add new results, skipping repeats */
+const addQ=list=>list.forEach(q=>{const k=normT(q.t);if(!k||qHave.has(k))return;qHave.add(k);qAll.push(q)});
+const webMore=()=>web&&(web.wq!=null||web.ws!=null);
+/* one step: next pages of Wikiquote and Wikisource */
+async function webStep(){
+  const w=web,jobs=[w.wq!=null?wikiStep(wqFind,wqRead,WQ,w.term,w.wq):null,w.ws!=null?wikiStep(wsFind,wsRead,WS,w.term,w.ws):null];
+  const [a,b]=await Promise.allSettled(jobs.map(j=>j||Promise.resolve(null)));
+  if(web!==w)return;
+  if(a.status==="fulfilled"&&a.value){addQ(a.value.list);w.wq=a.value.next;w.okWq=true}else if(w.wq!=null){w.wq=null}
+  if(b.status==="fulfilled"&&b.value){addQ(b.value.list);w.ws=b.value.next;w.okWs=true}else if(w.ws!=null){w.ws=null}
+}
+function qCounts(){
+  document.querySelectorAll("[data-qk]").forEach(b=>{const n=b.dataset.qk==="all"?qAll.length:qAll.filter(x=>x.kind===b.dataset.qk).length;b.textContent=(b.dataset.qk==="all"?"All":b.dataset.qk==="quote"?"Quotes":"Poems")+" "+n});
+  $("qkinds").hidden=!qAll.length;
 }
 async function quoteSearch(){
   const term=$("qq").value.trim();if(!term)return toast("Type a word to search");
-  $("qq").blur();$("qgo").disabled=true;$("qres").innerHTML="";$("qmore").hidden=true;$("qkinds").hidden=true;$("qnote").textContent="Searching quotes and poems…";
+  $("qq").blur();$("qgo").disabled=true;$("qres").innerHTML="";$("qmore").hidden=true;$("qkinds").hidden=true;$("qnote").textContent="Searching quotes and poems on the web…";
   const words=term.toLowerCase().split(/\s+/).filter(Boolean),phrase=term.toLowerCase();
-  const [qb,pb,wq]=await Promise.all([quoteBank(),poemSearch(term,words),wikiSearch(term).then(l=>({list:l,online:true}),()=>({list:[],online:false}))]);
-  const hits=qb.list.filter(q=>{const h=(q.t+" "+q.a).toLowerCase();return words.every(w=>h.includes(w))});
+  qRes=words.map(w=>new RegExp("(?:^|[^\\p{L}\\p{N}])"+escRe(w),"iu"));
+  qAll=[];qHave=new Set();qKind="all";qShown=0;
+  document.querySelectorAll("[data-qk]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.qk==="all"));
+  const w=web={term,wq:0,ws:0,okWq:false,okWs:false};
+  const [qb,pb]=await Promise.all([quoteBank(),poemSearch(term),webStep()]);
+  if(web!==w)return;
+  const hits=qb.list.filter(q=>hasWords(q.t+" "+q.a));
   const rank=q=>(q.mine?0:2)+(q.t.toLowerCase().includes(phrase)?0:1);
   hits.sort((a,b)=>rank(a)-rank(b)||a.t.length-b.t.length);
-  const have=new Set(hits.map(q=>normT(q.t))),wl=wq.list.filter(q=>{const k=normT(q.t);if(have.has(k))return false;have.add(k);return true});
-  qAll=[...hits,...wl,...pb.list];qKind="all";
-  document.querySelectorAll("[data-qk]").forEach(b=>{const n=b.dataset.qk==="all"?qAll.length:qAll.filter(x=>x.kind===b.dataset.qk).length;b.textContent=(b.dataset.qk==="all"?"All":b.dataset.qk==="quote"?"Quotes":"Poems")+" "+n;b.setAttribute("aria-pressed",b.dataset.qk==="all")});
-  $("qkinds").hidden=!qAll.length;
-  const off=!qb.online&&!pb.online&&!wq.online;
-  $("qnote").textContent=off?"Can't reach the internet. Showing the app's own quotes only.":!qAll.length?`Nothing found for "${term}". Try another word.`:"";
-  qShown=0;showQ();$("qgo").disabled=false;
+  const webFirst=qAll;qAll=[];qHave=new Set();
+  addQ(hits);addQ(webFirst.filter(x=>x.kind==="quote"));addQ(pb.list);addQ(webFirst.filter(x=>x.kind==="poem"));
+  /* rare words: read a few more pages before showing */
+  for(let n=0;n<2&&qAll.length<30&&webMore();n++){$("qnote").textContent=`Found ${qAll.length} so far. Searching more pages…`;await webStep();if(web!==w)return}
+  qCounts();
+  const down=[!qb.online&&"quote lists",!pb.online&&"PoetryDB",!w.okWq&&"Wikiquote",!w.okWs&&"Wikisource"].filter(Boolean);
+  $("qnote").textContent=down.length===4?"Can't reach the internet. Showing the app's own quotes only.":!qAll.length?`Nothing found for "${term}". Try another word.`:down.length?`Not reached: ${down.join(", ")}. Results from the other sources.`:"";
+  showQ();$("qgo").disabled=false;
 }
 function showQ(){
   const list=qKind==="all"?qAll:qAll.filter(x=>x.kind===qKind),next=list.slice(qShown,qShown+30);
   $("qres").insertAdjacentHTML("beforeend",next.map(x=>{const i=qAll.indexOf(x),meta=x.kind==="poem"?`Poem: ${esc(x.title)}${x.a?", "+esc(x.a):""}`:`Quote${x.mine?" (Bunny Quotes)":x.a?": "+esc(x.a):""}`;
     return `<button class="qitem" data-q="${i}"><p>${esc(x.t)}</p><small>${meta}</small></button>`}).join(""));
-  qShown+=next.length;$("qmore").hidden=qShown>=list.length;
+  qShown+=next.length;$("qmore").hidden=qShown>=list.length&&!webMore();
+}
+/* Show more: next 30 on screen; when all are shown, search the next web pages */
+async function moreQ(){
+  const list=qKind==="all"?qAll:qAll.filter(x=>x.kind===qKind);
+  if(qShown<list.length)return showQ();
+  if(!webMore()||qBusy)return;
+  qBusy=true;$("qmore").disabled=true;$("qmore").textContent="Searching more pages…";
+  const w=web,before=list.length;
+  for(let n=0;n<3&&webMore();n++){await webStep();if(web!==w)break;const l=qKind==="all"?qAll:qAll.filter(x=>x.kind===qKind);if(l.length>before)break}
+  qBusy=false;$("qmore").disabled=false;$("qmore").textContent="Show more";
+  if(web!==w)return;
+  qCounts();showQ();
+  if((qKind==="all"?qAll:qAll.filter(x=>x.kind===qKind)).length===before)toast("No more results on the web");
 }
 $("qgo").onclick=quoteSearch;
 $("qq").onkeydown=e=>{if(e.key==="Enter")quoteSearch()};
-$("qmore").onclick=showQ;
+$("qmore").onclick=moreQ;
 $("qkinds").onclick=e=>{const b=e.target.closest("[data-qk]");if(!b)return;qKind=b.dataset.qk;document.querySelectorAll("[data-qk]").forEach(x=>x.setAttribute("aria-pressed",x===b));$("qres").innerHTML="";qShown=0;showQ()};
 $("qres").onclick=e=>{
   const b=e.target.closest("[data-q]");if(!b)return;const x=qAll[+b.dataset.q];
