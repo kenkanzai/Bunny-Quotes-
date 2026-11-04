@@ -301,6 +301,12 @@ body.replying .toast{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
       <input type="text" id="giphyKey2" autocomplete="off" spellcheck="false">
       <label class="label" for="pexelsKey2">Pexels key (optional, for photos) — <a href="https://www.pexels.com/api/" target="_blank" rel="noopener">get one</a></label>
       <input type="text" id="pexelsKey2" autocomplete="off" spellcheck="false" placeholder="Leave empty to skip photos">
+      <label class="label" for="geminiKey2">Gemini key (free, wide web search with Google) — <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">get one</a></label>
+      <input type="text" id="geminiKey2" autocomplete="off" spellcheck="false" placeholder="Optional">
+      <label class="label" for="tavilyKey2">Tavily key (free, used when Gemini's limit is used up) — <a href="https://app.tavily.com" target="_blank" rel="noopener">get one</a></label>
+      <input type="text" id="tavilyKey2" autocomplete="off" spellcheck="false" placeholder="Optional">
+      <label class="label" for="exaKey2">Exa key (free, used after Tavily) — <a href="https://dashboard.exa.ai" target="_blank" rel="noopener">get one</a></label>
+      <input type="text" id="exaKey2" autocomplete="off" spellcheck="false" placeholder="Optional">
       <label class="label" for="usServer2" id="usServerLabel">Us server link (for the Us tab)</label>
       <input type="text" id="usServer2" autocomplete="off" spellcheck="false" placeholder="https://….supabase.co/functions/v1/bunny">
       <div class="row"><button class="btn primary" id="saveKeys2">Save</button></div>
@@ -349,7 +355,7 @@ const fixQ=t=>t.replace(/[’‘]/g,"'");
 const rand=a=>a[Math.floor(Math.random()*a.length)];
 const day=Math.floor((Date.now()-new Date().getTimezoneOffset()*60000)/86400000);
 const DEFAULT_GIPHY="5yU3DWhRgHorlkkf7c7eFQCW12qWwxa3";
-let keys={giphy:store.get("giphyKey")||DEFAULT_GIPHY,pexels:store.get("pexelsKey")};
+let keys={giphy:store.get("giphyKey")||DEFAULT_GIPHY,pexels:store.get("pexelsKey"),gemini:store.get("geminiKey"),tavily:store.get("tavilyKey"),exa:store.get("exaKey")};
 let style=Object.assign({font:"gaegu",color:"#FFFFFF",size:"m",pos:"bottom",layout:"on",shape:"original"},JSON.parse(store.get("style")||"{}"));
 let cat=CATS[0];
 let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2800)}
@@ -447,12 +453,12 @@ document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
   const v=t.dataset.view;show(v);
   if(v==="find"&&!results.length)search(true);
   if(v==="today")renderToday();
-  if(v==="settings"){$("giphyKey2").value=keys.giphy;$("pexelsKey2").value=keys.pexels;$("usServer2").value=us.server}
+  if(v==="settings"){$("giphyKey2").value=keys.giphy;$("pexelsKey2").value=keys.pexels;$("geminiKey2").value=keys.gemini;$("tavilyKey2").value=keys.tavily;$("exaKey2").value=keys.exa;$("usServer2").value=us.server}
   if(v==="us")openUs();
 });
-function saveKeys(g,p){keys={giphy:g.trim(),pexels:p.trim()};store.set("giphyKey",keys.giphy);store.set("pexelsKey",keys.pexels)}
+function saveKeys(g,p){keys=Object.assign(keys,{giphy:g.trim(),pexels:p.trim()});store.set("giphyKey",keys.giphy);store.set("pexelsKey",keys.pexels)}
 $("saveKeys").onclick=()=>{if(!$("giphyKey").value.trim())return toast("Paste your GIPHY key first");saveKeys($("giphyKey").value,"");start()};
-$("saveKeys2").onclick=()=>{saveKeys($("giphyKey2").value,$("pexelsKey2").value);us.server=$("usServer2").value.trim();store.set("usServer",us.server);toast("Saved");results=[];store.set("todayCache","");loadToday()};
+$("saveKeys2").onclick=()=>{saveKeys($("giphyKey2").value,$("pexelsKey2").value);["gemini","tavily","exa"].forEach(k=>{keys[k]=$(k+"Key2").value.trim();store.set(k+"Key",keys[k])});us.server=$("usServer2").value.trim();store.set("usServer",us.server);toast("Saved");results=[];store.set("todayCache","");loadToday()};
 
 /* ---------- GIPHY / Pexels ---------- */
 class ApiErr extends Error{}
@@ -697,6 +703,80 @@ async function poemSearch(term){
     out.push({kind:"poem",t:excerpt(p),a:fixQ(p.author||""),title:fixQ(p.title||"")})})});
   return {list:out.filter(p=>p.t),online:got.some(g=>g.status==="fulfilled")};
 }
+/* ---------- Wide web search (v6.3): Google via Gemini, then Tavily, then Exa (free keys in Settings) ---------- */
+const WIDE=[
+  {id:"gemini",name:"Google (Gemini)",vars:["quotes","poems","more quotes"]},
+  {id:"tavily",name:"Tavily",vars:["quotes","poems","sayings","short quotes"]},
+  {id:"exa",name:"Exa",vars:["quotes","poems","sayings","short quotes"]}
+];
+const WIDE_DAYS=3; /* results of the same word are kept on the phone this long (no limit used) */
+function jsonArr(t){const a=t.indexOf("["),b=t.lastIndexOf("]");if(a<0||b<a)return[];try{const v=JSON.parse(t.slice(a,b+1));return Array.isArray(v)?v:[]}catch(e){return[]}}
+const cleanQ=t=>fixQ(String(t||"")).replace(/\r/g,"").replace(/^[\s"“”]+|[\s"“”]+$/g,"").replace(/[ \t]+/g," ").trim();
+const keepWide=x=>x.t.length>=8&&hasWords(x.t+" "+x.a+" "+(x.title||""));
+async function geminiFind(term,v,key){
+  const kind=v==="poems"?"short poems or verses of poems":"quotes";
+  const extra=v==="more quotes"?" Give different ones from the most famous, from many different websites.":"";
+  const prompt=`Use Google Search to find real, already published ${kind} that contain the word(s) "${term}". Copy each one exactly as published; never write or change one. Give up to 25.${extra} Poems: whole poem if 12 lines or less, else the verse with the word (max 8 lines). Answer only with a JSON array, no other text: [{"kind":"quote" or "poem","text":"...","author":"... or empty","title":"poem title or empty","source":"website name"}]`;
+  const r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],tools:[{google_search:{}}]})});
+  if(!r.ok)throw new Error(r.status===429?"limit":r.status===400||r.status===403?"key":"net");
+  const j=await r.json(),txt=(((j.candidates||[])[0]||{}).content||{parts:[]}).parts.map(p=>p.text||"").join("");
+  return jsonArr(txt).map(x=>{const kindOf=x.kind==="poem"?"poem":"quote",t=cleanQ(x.text);
+    return {kind:kindOf,t:kindOf==="poem"?excerpt({lines:t.split("\n")}):t,a:cleanQ(x.author).slice(0,60),title:cleanQ(x.title).slice(0,80),src:cleanQ(x.source).slice(0,40)||"Google",web:true}}).filter(x=>x.t&&(x.kind==="poem"||x.t.length<=280)&&keepWide(x));
+}
+/* take quote lines out of a web page's text */
+function pullQuotes(raw,src){
+  const L=String(raw||"").replace(/\r/g,"").split(/\n+/).map(l=>l.replace(/\s+/g," ").trim()).filter(Boolean),out=[];
+  L.forEach((l0,i)=>{
+    let l=l0.replace(/^([#>*•·]|\d+[.)]|-(?=\s))+\s*/,""),a="";
+    const m=l.match(/^(.{8,280}?)\s*(?:[—–―]|--?)\s*([A-Z][\p{L}.' ]{1,40})$/u);
+    if(m){l=m[1];a=m[2]}else{const n=(L[i+1]||"").match(/^(?:[—–―]|--?)\s*([A-Z][\p{L}.' ]{1,40})$/u);if(n)a=n[1]}
+    l=cleanQ(l);a=cleanQ(a);
+    const w=l.split(" ");
+    if(l.length<8||l.length>280||w.length<3)return;
+    if(/https?:|www\.|\.com\b|[|©#@]|\b(cookie|subscribe|sign up|log ?in|click|privacy|advertis|newsletter|share this|pin it|read more|related)\b/i.test(l))return;
+    if(l.length<70&&!/[.!?,;'"]$/.test(l)&&w.filter(x=>/^[A-Z]/.test(x)).length/w.length>=.6)return; /* headings like "Cute Quotes For Her" */
+    const q={kind:"quote",t:l,a,src,web:true};if(keepWide(q))out.push(q);
+  });
+  return out.slice(0,15);
+}
+const host=u=>{try{return new URL(u).hostname.replace(/^www\./,"")}catch(e){return ""}};
+async function tavilyFind(term,v,key){
+  const r=await fetch("https://api.tavily.com/search",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},body:JSON.stringify({query:`${term} ${v}`,max_results:10,search_depth:"basic",include_raw_content:"text"})});
+  if(!r.ok)throw new Error(r.status===429||r.status===432||r.status===433?"limit":r.status===401?"key":"net");
+  const j=await r.json();return (j.results||[]).flatMap(x=>pullQuotes(x.raw_content||x.content,host(x.url)));
+}
+async function exaFind(term,v,key){
+  const r=await fetch("https://api.exa.ai/search",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":key},body:JSON.stringify({query:`${term} ${v}`,numResults:10,contents:{text:{maxCharacters:8000}}})});
+  if(!r.ok)throw new Error(r.status===429||r.status===402?"limit":r.status===401||r.status===403?"key":"net");
+  const j=await r.json();return (j.results||[]).flatMap(x=>pullQuotes(x.text,host(x.url)));
+}
+const WIDE_RUN={gemini:geminiFind,tavily:tavilyFind,exa:exaFind};
+async function wideOne(p,term,v){
+  const ck="qw|"+p.id+"|"+term.toLowerCase()+"|"+v;
+  try{const c=JSON.parse(store.get(ck)||"null");if(c&&Date.now()-c.at<WIDE_DAYS*864e5)return c.list}catch(e){}
+  const list=await WIDE_RUN[p.id](term,v,keys[p.id]);
+  store.set(ck,JSON.stringify({at:Date.now(),list}));
+  return list;
+}
+const wideMore=()=>!!(web&&web.wide&&WIDE.some((p,i)=>(i>web.wide.i||(i===web.wide.i&&web.wide.v<p.vars.length))&&keys[p.id]&&!web.wide.down[p.id]));
+/* one step: the next search of the first service that still works; on limit/error, the next service */
+async function wideStep(){
+  const w=web;if(!w||!w.wide)return;const st=w.wide;
+  while(st.i<WIDE.length){
+    const p=WIDE[st.i];
+    if(!keys[p.id]||st.down[p.id]||st.v>=p.vars.length){st.i++;st.v=0;continue}
+    const v=p.vars[st.v++];
+    try{const list=await wideOne(p,w.term,v);if(web!==w)return;st.used[p.id]=1;addQ(list);if(list.length)return}
+    catch(e){if(web!==w)return;st.down[p.id]=e.message;st.i++;st.v=0}
+  }
+}
+const WHY={limit:"limit used up",key:"key not accepted",net:"not reached"};
+function wideNote(){
+  const st=web&&web.wide;if(!st)return"";
+  if(!WIDE.some(p=>keys[p.id]))return"Tip: add a free Gemini key in Settings to search the whole web with Google.";
+  const used=WIDE.filter(p=>st.used[p.id]).map(p=>p.name),down=WIDE.filter(p=>st.down[p.id]).map(p=>`${p.name} (${WHY[st.down[p.id]]||"not reached"})`);
+  return (used.length?"Web search: "+used.join(", ")+". ":"")+(down.length?"Skipped: "+down.join(", ")+".":"");
+}
 /* add new results, skipping repeats */
 const addQ=list=>list.forEach(q=>{const k=normT(q.t);if(!k||qHave.has(k))return;qHave.add(k);qAll.push(q)});
 const webMore=()=>web&&(web.wq!=null||web.ws!=null);
@@ -719,38 +799,39 @@ async function quoteSearch(){
   qRes=words.map(w=>new RegExp("(?:^|[^\\p{L}\\p{N}])"+escRe(w),"iu"));
   qAll=[];qHave=new Set();qKind="all";qShown=0;
   document.querySelectorAll("[data-qk]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.qk==="all"));
-  const w=web={term,wq:0,ws:0,okWq:false,okWs:false};
-  const [qb,pb]=await Promise.all([quoteBank(),poemSearch(term),webStep()]);
+  const w=web={term,wq:0,ws:0,okWq:false,okWs:false,wide:{i:0,v:0,used:{},down:{}}};
+  const [qb,pb]=await Promise.all([quoteBank(),poemSearch(term),webStep(),wideStep()]);
   if(web!==w)return;
   const hits=qb.list.filter(q=>hasWords(q.t+" "+q.a));
   const rank=q=>(q.mine?0:2)+(q.t.toLowerCase().includes(phrase)?0:1);
   hits.sort((a,b)=>rank(a)-rank(b)||a.t.length-b.t.length);
   const webFirst=qAll;qAll=[];qHave=new Set();
-  addQ(hits);addQ(webFirst.filter(x=>x.kind==="quote"));addQ(pb.list);addQ(webFirst.filter(x=>x.kind==="poem"));
+  addQ(hits.filter(x=>x.mine));addQ(webFirst.filter(x=>x.src));addQ(hits);addQ(webFirst.filter(x=>x.kind==="quote"));addQ(pb.list);addQ(webFirst.filter(x=>x.kind==="poem"));
   /* rare words: read a few more pages before showing */
   for(let n=0;n<2&&qAll.length<30&&webMore();n++){$("qnote").textContent=`Found ${qAll.length} so far. Searching more pages…`;await webStep();if(web!==w)return}
   qCounts();
   const down=[!qb.online&&"quote lists",!pb.online&&"PoetryDB",!w.okWq&&"Wikiquote",!w.okWs&&"Wikisource"].filter(Boolean);
-  $("qnote").textContent=down.length===4?"Can't reach the internet. Showing the app's own quotes only.":!qAll.length?`Nothing found for "${term}". Try another word.`:down.length?`Not reached: ${down.join(", ")}. Results from the other sources.`:"";
+  $("qnote").textContent=down.length===4&&!qAll.some(x=>x.src)?"Can't reach the internet. Showing the app's own quotes only.":!qAll.length?`Nothing found for "${term}". Try another word.`:down.length?`Not reached: ${down.join(", ")}. Results from the other sources.`:"";
+  const wn=wideNote();if(wn)$("qnote").textContent=($("qnote").textContent+" "+wn).trim();
   showQ();$("qgo").disabled=false;
 }
 function showQ(){
   const list=qKind==="all"?qAll:qAll.filter(x=>x.kind===qKind),next=list.slice(qShown,qShown+30);
-  $("qres").insertAdjacentHTML("beforeend",next.map(x=>{const i=qAll.indexOf(x),meta=x.kind==="poem"?`Poem: ${esc(x.title)}${x.a?", "+esc(x.a):""}`:`Quote${x.mine?" (Bunny Quotes)":x.a?": "+esc(x.a):""}`;
-    return `<button class="qitem" data-q="${i}"><p>${esc(x.t)}</p><small>${meta}</small></button>`}).join(""));
-  qShown+=next.length;$("qmore").hidden=qShown>=list.length&&!webMore();
+  $("qres").insertAdjacentHTML("beforeend",next.map(x=>{const i=qAll.indexOf(x),meta=x.kind==="poem"?`Poem: ${esc(x.title)}${x.a?", "+esc(x.a):""}`:`Quote${x.mine?" (Bunny Quotes)":x.a?": "+esc(x.a):""}`;const from=x.src?` · ${esc(x.src)}`:"";
+    return `<button class="qitem" data-q="${i}"><p>${esc(x.t)}</p><small>${meta}${from}</small></button>`}).join(""));
+  qShown+=next.length;$("qmore").hidden=qShown>=list.length&&!webMore()&&!wideMore();
 }
 /* Show more: next 30 on screen; when all are shown, search the next web pages */
 async function moreQ(){
   const list=qKind==="all"?qAll:qAll.filter(x=>x.kind===qKind);
   if(qShown<list.length)return showQ();
-  if(!webMore()||qBusy)return;
+  if((!webMore()&&!wideMore())||qBusy)return;
   qBusy=true;$("qmore").disabled=true;$("qmore").textContent="Searching more pages…";
   const w=web,before=list.length;
-  for(let n=0;n<3&&webMore();n++){await webStep();if(web!==w)break;const l=qKind==="all"?qAll:qAll.filter(x=>x.kind===qKind);if(l.length>before)break}
+  for(let n=0;n<3&&(webMore()||wideMore());n++){if(wideMore())await wideStep();else await webStep();if(web!==w)break;const l=qKind==="all"?qAll:qAll.filter(x=>x.kind===qKind);if(l.length>before)break}
   qBusy=false;$("qmore").disabled=false;$("qmore").textContent="Show more";
   if(web!==w)return;
-  qCounts();showQ();
+  qCounts();showQ();{const wn=wideNote();if(wn)$("qnote").textContent=wn}
   if((qKind==="all"?qAll:qAll.filter(x=>x.kind===qKind)).length===before)toast("No more results on the web");
 }
 $("qgo").onclick=quoteSearch;
